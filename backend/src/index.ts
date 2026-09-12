@@ -32,7 +32,7 @@ app.use(helmet());
 const allowedOrigins = [
   'https://sky-pakistan-airline.vercel.app',
   process.env.CLIENT_URL,
-].filter(Boolean);
+].filter(Boolean) as string[];
 
 app.use(
   cors({
@@ -70,57 +70,77 @@ app.use('/api/manage', manageRoutes);
 app.use('/api/checkin', checkinRoutes);
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     time: new Date(),
   });
 });
 
-const PORT = Number(process.env.PORT) || 4000;
+// Vercel / Serverless initialization
+let dbConnected = false;
 
-// Start server
-export async function start() {
+async function initializeDatabase() {
+  if (dbConnected) return;
+
+  const mongoUri = process.env.MONGODB_URI;
+
+  if (!mongoUri) {
+    throw new Error('MONGODB_URI is missing');
+  }
+
+  logger.info('Connecting to MongoDB Atlas...');
+
+  await connectDB(mongoUri);
+
+  logger.info('MongoDB connected successfully');
+
+  // Only run demo data initialization once
+  await ensureDemoData();
+
+  dbConnected = true;
+}
+
+// Vercel handler
+export default async function handler(
+  req: express.Request,
+  res: express.Response
+) {
   try {
-    // MongoDB URI must come from .env
-    const mongoUri = process.env.MONGODB_URI;
-
-    if (!mongoUri) {
-      throw new Error(
-        'MONGODB_URI is missing. Please add MONGODB_URI to your .env file.'
-      );
-    }
-
-    logger.info('Connecting to MongoDB Atlas...');
-
-    await connectDB(mongoUri);
-
-    logger.info('MongoDB connected successfully');
-
-    // Insert demo/initial data
-    await ensureDemoData();
-
-    // Start Express server (skipped on Vercel, only runs locally)
-    if (process.env.VERCEL !== '1') {
-      app.listen(PORT, () => {
-        logger.info(`Server running on port ${PORT}`);
-      });
-    }
+    await initializeDatabase();
+    return app(req, res);
   } catch (err) {
     logger.error(
-      {
-        err,
-      },
-      'Failed to start server'
+      { err },
+      'Failed to initialize server'
     );
 
-    process.exit(1);
+    return res.status(500).json({
+      message: 'Server initialization failed',
+    });
   }
 }
 
-// Start only when running directly
-if (require.main === module) {
-  start();
+// Local development
+if (process.env.VERCEL !== '1') {
+  const PORT = Number(process.env.PORT) || 4000;
+
+  initializeDatabase()
+    .then(() => {
+      app.listen(PORT, () => {
+        logger.info(
+          `Server running on port ${PORT}`
+        );
+      });
+    })
+    .catch((err) => {
+      logger.error(
+        { err },
+        'Failed to start server'
+      );
+
+      process.exit(1);
+    });
 }
 
 export { app };
