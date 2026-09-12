@@ -8,16 +8,20 @@ let _memoryServer: any = null;
 export async function connectDB(uri?: string) {
   try {
     if (!uri) {
-      throw new Error('No MONGODB_URI provided');
+      throw new Error('MONGODB_URI is missing');
     }
 
-    await mongoose.connect(uri);
+    logger.info('Attempting MongoDB connection...');
+
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+    });
 
     logger.info('MongoDB Atlas connected successfully');
 
     return;
   } catch (err) {
-    // Show the real MongoDB error
     if (err instanceof Error) {
       logger.error(
         {
@@ -34,11 +38,12 @@ export async function connectDB(uri?: string) {
       );
     }
 
-    // Fallback to in-memory MongoDB for local development
-    if (process.env.NODE_ENV === 'production') {
+    // Never start MongoMemoryServer on Vercel/production
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') {
       throw err;
     }
 
+    // Local development fallback only
     try {
       const { MongoMemoryServer } = await import('mongodb-memory-server');
 
