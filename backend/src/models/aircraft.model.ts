@@ -1,13 +1,13 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 
-export interface IAircraft extends Document {
+export interface IAircraft {
   model: string;
   registration: string;
   capacity: number;
-  seatLayout: any; // keep flexible for now
+  seatLayout: any;
 }
 
-const AircraftSchema: Schema = new Schema(
+const AircraftSchema = new Schema<IAircraft>(
   {
     model: { type: String, required: true },
     registration: { type: String, required: true, unique: true },
@@ -17,4 +17,7 @@ const AircraftSchema: Schema = new Schema(
   { timestamps: true }
 );
 
-export const Aircraft = mongoose.model<IAircraft>('Aircraft', AircraftSchema);
+export const Aircraft = mongoose.model<IAircraft>(
+  'Aircraft',
+  AircraftSchema
+);
