@@ -5,5 +5,5 @@ export default function vercelHandler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  return handler(req, res);
+  return handler(req as any, res as any);
 }
