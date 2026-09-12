@@ -17,7 +17,7 @@ export default function Login() {
       navigate('/');
     } catch (error: any) {
       alert(error?.response?.data?.message || 'Login failed. Check your email and password.');
-    }
+    }   
   };
 
   return (
