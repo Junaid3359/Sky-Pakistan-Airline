@@ -25,32 +25,70 @@ const logger = pino();
 
 const app = express();
 
-// Security
+/* =========================================================
+   SECURITY
+========================================================= */
+
 app.use(helmet());
 
-// CORS
+/* =========================================================
+   CORS
+========================================================= */
+
 const allowedOrigins = [
   'https://sky-pakistan-airline.vercel.app',
+  'https://sky-pakistan-airline-frontend.vercel.app',
   process.env.CLIENT_URL,
 ].filter(Boolean) as string[];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+      // Allow requests without an Origin header
+      // (Postman, server-to-server, etc.)
+      if (!origin) {
+        return callback(null, true);
       }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      logger.warn(
+        { origin },
+        'CORS origin not allowed'
+      );
+
+      return callback(
+        new Error('Not allowed by CORS')
+      );
     },
     credentials: true,
+    methods: [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'OPTIONS',
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+    ],
   })
 );
 
-// JSON body parser
+/* =========================================================
+   JSON BODY
+========================================================= */
+
 app.use(express.json());
 
-// Rate limiting
+/* =========================================================
+   RATE LIMITING
+========================================================= */
+
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -58,7 +96,10 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-// API Routes
+/* =========================================================
+   API ROUTES
+========================================================= */
+
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
@@ -69,45 +110,104 @@ app.use('/api/tickets', ticketsRoutes);
 app.use('/api/manage', manageRoutes);
 app.use('/api/checkin', checkinRoutes);
 
-// Health check
+/* =========================================================
+   HEALTH CHECK
+========================================================= */
+
 app.get('/health', (_req, res) => {
-  res.json({
+  res.status(200).json({
     status: 'ok',
     time: new Date(),
   });
 });
 
-// Vercel / Serverless initialization
+/* =========================================================
+   DATABASE INITIALIZATION
+========================================================= */
+
 let dbConnected = false;
 
-async function initializeDatabase() {
-  if (dbConnected) return;
+let dbInitializationPromise: Promise<void> | null = null;
 
-  const mongoUri = process.env.MONGODB_URI;
-
-  if (!mongoUri) {
-    throw new Error('MONGODB_URI is missing');
+async function initializeDatabase(): Promise<void> {
+  if (dbConnected) {
+    return;
   }
 
-  logger.info('Connecting to MongoDB Atlas...');
+  if (dbInitializationPromise) {
+    return dbInitializationPromise;
+  }
 
-  await connectDB(mongoUri);
+  dbInitializationPromise = (async () => {
+    const mongoUri = process.env.MONGODB_URI;
 
-  logger.info('MongoDB connected successfully');
+    if (!mongoUri) {
+      throw new Error(
+        'MONGODB_URI is missing from environment variables'
+      );
+    }
 
-  // Only run demo data initialization once
-  await ensureDemoData();
+    logger.info(
+      'Connecting to MongoDB Atlas...'
+    );
 
-  dbConnected = true;
+    await connectDB(mongoUri);
+
+    logger.info(
+      'MongoDB connected successfully'
+    );
+
+    // Initialize demo data only after successful
+    // MongoDB connection.
+    await ensureDemoData();
+
+    dbConnected = true;
+
+    logger.info(
+      'Database initialization completed'
+    );
+  })();
+
+  try {
+    await dbInitializationPromise;
+  } catch (error) {
+    dbInitializationPromise = null;
+    throw error;
+  }
 }
 
-// Vercel handler
+/* =========================================================
+   VERCEL SERVERLESS HANDLER
+========================================================= */
+
 export default async function handler(
   req: express.Request,
   res: express.Response
 ) {
   try {
+    /*
+     * IMPORTANT:
+     * Browser sends OPTIONS before the actual API request.
+     *
+     * Handle CORS preflight BEFORE MongoDB initialization.
+     * This prevents:
+     *
+     * OPTIONS /api/flights/search -> 500
+     *
+     * when MongoDB is slow/unavailable.
+     */
+    if (req.method === 'OPTIONS') {
+      return app(req, res);
+    }
+
+    /*
+     * Initialize MongoDB for actual API requests.
+     */
     await initializeDatabase();
+
+    /*
+     * Pass the request to Express.
+     */
     return app(req, res);
   } catch (err) {
     logger.error(
@@ -115,13 +215,21 @@ export default async function handler(
       'Failed to initialize server'
     );
 
-    return res.status(500).json({
-      message: 'Server initialization failed',
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: 'Server initialization failed',
+      });
+    }
+
+    return;
   }
 }
 
-// Local development
+/* =========================================================
+   LOCAL DEVELOPMENT
+========================================================= */
+
 if (process.env.VERCEL !== '1') {
   const PORT = Number(process.env.PORT) || 4000;
 
@@ -142,5 +250,9 @@ if (process.env.VERCEL !== '1') {
       process.exit(1);
     });
 }
+
+/* =========================================================
+   EXPORT EXPRESS APP
+========================================================= */
 
 export { app };
