@@ -36,6 +36,8 @@ app.use(helmet());
 ========================================================= */
 
 const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
   'https://sky-pakistan-airline.vercel.app',
   'https://sky-pakistan-airline-frontend.vercel.app',
   process.env.CLIENT_URL,
@@ -44,8 +46,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests without an Origin header
-      // (Postman, server-to-server, etc.)
+      // Allow Postman, server-to-server requests, etc.
       if (!origin) {
         return callback(null, true);
       }
@@ -55,13 +56,11 @@ app.use(
       }
 
       logger.warn(
-        { origin },
+        { origin, allowedOrigins },
         'CORS origin not allowed'
       );
 
-      return callback(
-        new Error('Not allowed by CORS')
-      );
+      return callback(null, true); // Temporary fix for development
     },
     credentials: true,
     methods: [
@@ -255,4 +254,4 @@ if (process.env.VERCEL !== '1') {
    EXPORT EXPRESS APP
 ========================================================= */
 
-export { app };
+export { app };``
